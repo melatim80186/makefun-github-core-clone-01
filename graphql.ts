@@ -334,7 +334,13 @@ function executeOperation(op: unknown, ctx: HandlerCtx): Record<string, unknown>
       const created = ctx.store.createIssue(repo, typeof input.title === 'string' ? input.title : '', typeof input.body === 'string' ? input.body : '');
       if (created !== null && typeof created === 'object' && 'error' in created) return missingResult('createIssue');
       const issue = created as Issue;
-      return { data: { createIssue: { issue: { number: issue.number, id: globalId('I', repo.id, issue.number) } } } };
+      return {
+        data: {
+          createIssue: {
+            issue: { number: issue.number, id: globalId('I', repo.id, issue.number) },
+          },
+        },
+      };
     }
     if (query.includes('closeIssue')) {
       const input = recordOf(variables.input);
@@ -344,7 +350,13 @@ function executeOperation(op: unknown, ctx: HandlerCtx): Record<string, unknown>
       const issue = repo !== undefined && Number.isFinite(num) ? ctx.store.getIssue(repo, num) : undefined;
       if (repo === undefined || issue === undefined) return missingResult('closeIssue');
       ctx.store.patchIssue(repo, num, { state: 'closed' });
-      return { data: { closeIssue: { issue: { number: issue.number, id: globalId('I', repo.id, issue.number), state: 'CLOSED' } } } };
+      return {
+        data: {
+          closeIssue: {
+            issue: { number: issue.number, id: globalId('I', repo.id, issue.number), state: 'CLOSED' },
+          },
+        },
+      };
     }
     if (query.includes('createPullRequest')) {
       const input = recordOf(variables.input);
@@ -358,7 +370,16 @@ function executeOperation(op: unknown, ctx: HandlerCtx): Record<string, unknown>
         return { data: { createPullRequest: null }, errors: [{ message: 'No such branch' }] };
       }
       const pr = created as Pull;
-      return { data: { createPullRequest: { pullRequest: { number: pr.number, id: globalId('P', repo.id, pr.number), state: 'OPEN', headRefName: pr.headRef, baseRefName: pr.baseRef } } } };
+      return {
+        data: {
+          createPullRequest: {
+            pullRequest: {
+              number: pr.number, id: globalId('P', repo.id, pr.number), state: 'OPEN',
+              headRefName: pr.headRef, baseRefName: pr.baseRef,
+            },
+          },
+        },
+      };
     }
     if (query.includes('mergePullRequest')) {
       const input = recordOf(variables.input);
@@ -369,10 +390,22 @@ function executeOperation(op: unknown, ctx: HandlerCtx): Record<string, unknown>
       if (repo === undefined || pr === undefined) return missingResult('mergePullRequest');
       const res = ctx.store.mergePull(repo, pr);
       if (res.ok) {
-        return { data: { mergePullRequest: { pullRequest: { number: pr.number, merged: true, state: 'CLOSED' } } } };
+        return {
+          data: {
+            mergePullRequest: {
+              pullRequest: { number: pr.number, merged: true, state: 'CLOSED' },
+            },
+          },
+        };
       }
       if (res.reason === 'already' && pr.merged) {
-        return { data: { mergePullRequest: { pullRequest: { number: pr.number, merged: true, state: 'CLOSED' } } } };
+        return {
+          data: {
+            mergePullRequest: {
+              pullRequest: { number: pr.number, merged: true, state: 'CLOSED' },
+            },
+          },
+        };
       }
       if (res.reason === 'conflict') {
         return { data: { mergePullRequest: null }, errors: [{ message: 'Merge conflict' }] };
@@ -386,7 +419,15 @@ function executeOperation(op: unknown, ctx: HandlerCtx): Record<string, unknown>
       const num = dec !== null ? Number(dec.parts[1]) : NaN;
       const comment = repo !== undefined && Number.isFinite(num) ? ctx.store.createComment(repo, num, typeof input.body === 'string' ? input.body : '') : undefined;
       if (repo === undefined || comment === undefined) return missingResult('addComment');
-      return { data: { addComment: { commentEdge: { node: { id: globalId('C', repo.id, num, comment.id), body: comment.body } } } } };
+      return {
+        data: {
+          addComment: {
+            commentEdge: {
+              node: { id: globalId('C', repo.id, num, comment.id), body: comment.body },
+            },
+          },
+        },
+      };
     }
 
     // node(id: ...)
@@ -396,7 +437,11 @@ function executeOperation(op: unknown, ctx: HandlerCtx): Record<string, unknown>
       if (dec !== null && dec.kind === 'R') {
         const repo = repoByDbId(ctx, Number(dec.parts[0]));
         if (repo === undefined) return { data: { node: null } };
-        return { data: { node: { id: idVar, name: repo.name, nameWithOwner: `${repo.owner}/${repo.name}` } } };
+        return {
+          data: {
+            node: { id: idVar, name: repo.name, nameWithOwner: `${repo.owner}/${repo.name}` },
+          },
+        };
       }
       return { data: { node: { id: idVar } } };
     }

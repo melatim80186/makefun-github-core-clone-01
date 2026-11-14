@@ -135,7 +135,8 @@ export function makeCommit(opts: CommitOptions): { sha: string; bytes: Buffer } 
   const body = opts.message.endsWith('\n') ? opts.message : `${opts.message}\n`;
   const raw = Buffer.from(`${head.join('\n')}\n\n${body}`, 'utf8');
   const bytes = gitObjectBytes('commit', raw);
-  return { sha: sha1(bytes), bytes };
+  const digest = sha1(bytes);
+  return { sha: digest, bytes };
 }
 
 export interface ParsedCommit {
@@ -164,7 +165,10 @@ export function parseCommit(data: Buffer): ParsedCommit {
     else if (line.startsWith('author ')) authorLine = line.slice(7);
     else if (line.startsWith('committer ')) committerLine = line.slice(10);
   }
-  return { tree, parents, authorLine, committerLine, message, raw: data };
+  return {
+    tree, parents, authorLine, committerLine, message,
+    raw: data,
+  };
 }
 
 /** Split "Name <email> 1234567890 +0000" into parts; anything else stays raw. */

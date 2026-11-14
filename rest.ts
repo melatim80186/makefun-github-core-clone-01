@@ -203,15 +203,16 @@ async function serveRest(req: IncomingMessage, res: ServerResponse, ctx: Handler
       if (!ctx.store.createBranch(repo, branch, sha)) {
         return jsonError(res, ctx, 422, 'Unknown commit sha');
       }
-      sendJson(res, ctx, 201, { ref, object: { sha } });
+      sendJson(res, ctx, 201, {
+        ref,
+        object: { sha },
+      });
       return;
     }
     if (sub === 'branches' && segs.length === 4) {
       if (method !== 'GET') return sendNotFound(res, ctx);
       sendJson(res, ctx, 200, ctx.store.listBranches(repo).map((b) => ({
-        name: b.name,
-        commit: { sha: b.sha },
-        protected: false,
+        name: b.name, commit: { sha: b.sha }, protected: false,
       })));
       return;
     }
@@ -232,8 +233,7 @@ async function serveRest(req: IncomingMessage, res: ServerResponse, ctx: Handler
             author: { name: meta?.authorName ?? repo.owner, email: meta?.authorEmail ?? '', date: authorDate },
             committer: { name: meta?.committerName ?? repo.owner, email: meta?.committerEmail ?? '', date: committerDate },
           },
-          author: { login: repo.owner },
-          committer: { login: repo.owner },
+          author: { login: repo.owner }, committer: { login: repo.owner },
         };
       }));
       return;
@@ -476,7 +476,9 @@ async function serveRest(req: IncomingMessage, res: ServerResponse, ctx: Handler
             if (result.reason === 'conflict') return jsonError(res, ctx, 405, 'Merge conflict');
             return jsonError(res, ctx, 409, 'Pull request already merged');
           }
-          sendJson(res, ctx, 200, { merged: true, sha: result.sha, message: result.message });
+          sendJson(res, ctx, 200, {
+            merged: true, sha: result.sha, message: result.message,
+          });
           return;
         }
         return sendNotFound(res, ctx);

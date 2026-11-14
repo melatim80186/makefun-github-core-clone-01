@@ -17,12 +17,12 @@ The process binds an ephemeral port, registers it at
 
 | Route | What it serves |
 | --- | --- |
-| `GET /healthz` | 200 `{"ok": true}` |
-| `GET /api/v3/` | API root, `X-OAuth-Scopes: repo, read:org` |
+| `GET /healthz` | Liveness probe — 200 `{"ok": true}` |
+| `GET /api/v3/` | API root, answers with `X-OAuth-Scopes: repo, read:org` |
 | `/api/v3/...` | REST v3: repos, branches, commits, contents, issues, comments, labels, pulls, merges |
-| `POST /api/graphql` | GraphQL v4 (the documents `gh` and `github-mcp-server` send) |
-| `POST /mcp` | MCP over streamable HTTP (revision 2026-07-28 plus the legacy handshake) |
-| `/<owner>/<repo>.git/...` | git smart HTTP: upload-pack v2/v0, receive-pack v0 |
+| `POST /api/graphql` | GraphQL v4 for the documents `gh` and `github-mcp-server` send |
+| `POST /mcp` | MCP over streamable HTTP (2026-07-28 revision plus the legacy handshake) |
+| `/<owner>/<repo>.git/...` | Git smart HTTP: upload-pack v2/v0 and receive-pack v0 |
 
 ## Layout
 

@@ -134,23 +134,18 @@ function okToolCall(obj: unknown): Record<string, unknown> {
 
 function repoCard(repo: Repo): Record<string, unknown> {
   return {
-    id: repo.id,
-    name: repo.name,
+    id: repo.id, name: repo.name,
     full_name: `${repo.owner}/${repo.name}`,
-    private: repo.private,
-    description: repo.description,
+    private: repo.private, description: repo.description,
     default_branch: repo.defaultBranch,
   };
 }
 
 function issueCard(issue: Issue): Record<string, unknown> {
   return {
-    id: issue.id,
-    number: issue.number,
-    title: issue.title,
-    body: issue.body,
-    state: issue.state,
-    labels: [],
+    id: issue.id, number: issue.number,
+    title: issue.title, body: issue.body,
+    state: issue.state, labels: [],
   };
 }
 
@@ -230,11 +225,8 @@ function runTool(name: string, args: Record<string, unknown>, ctx: HandlerCtx): 
     }
     const pr = created as Pull;
     const prCard: Record<string, unknown> = {
-      id: pr.id,
-      number: pr.number,
-      title: pr.title,
-      body: pr.body,
-      state: pr.state,
+      id: pr.id, number: pr.number,
+      title: pr.title, body: pr.body, state: pr.state,
       head: { ref: pr.headRef, sha: pr.headSha },
       base: { ref: pr.baseRef, sha: pr.baseSha },
     };

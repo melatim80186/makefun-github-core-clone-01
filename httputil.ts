@@ -75,7 +75,9 @@ export function readBody(req: IncomingMessage): Promise<Buffer> {
  * caller decides what that means); anything present-but-invalid fails.
  */
 export function parseJsonBody(buf: Buffer): { ok: true; value: unknown } | { ok: false } {
-  if (buf.length === 0) return { ok: true, value: undefined };
+  if (buf.length === 0) {
+    return { ok: true, value: undefined };
+  }
   try {
     return { ok: true, value: JSON.parse(buf.toString('utf8')) };
   } catch {
