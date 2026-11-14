@@ -50,86 +50,70 @@ mcp 15, protocol 5.
   splitting on ':'. Never the plain number.
 
 ## store.ts API (FROZEN — implementers code against this)
-```ts
-export interface User { id: number; login: string; name: string; email: string }
-export const VIEWER: User; // adaiversen
-export const SHOP_TOKEN: string;
-export const DEFAULT_BRANCH = 'main';
-export function nowIso(): string;      // logical clock, +1s per call
-export function nowEpochSec(): number; // same clock as epoch seconds
-export function globalId(kind: 'R'|'I'|'P'|'C', ...parts: (string|number)[]): string;
-export function decodeGlobalId(id: string): { kind: string; parts: string[] } | null;
-
-export interface Repo { id: number; name: string; owner: string; private: boolean;
-  description: string; defaultBranch: string; createdAt: string; updatedAt: string;
-  counter: number; labels: Map<string, Label>; issues: Map<number, Issue>;
-  pulls: Map<number, Pull>; comments: Map<number, Comment[]>; commentSeq: number;
-  objects: Map<string, GitObject>; refs: Map<string, string>;
-  commits: Map<string, CommitMeta>; }
-export interface Label { name: string; color: string; description?: string }
-export interface Issue { id: number; number: number; title: string; body: string;
-  state: 'open'|'closed'; labels: Label[]; createdAt: string; updatedAt: string; repo: Repo }
-export interface Pull { id: number; number: number; title: string; body: string;
-  state: 'open'|'closed'; headRef: string; baseRef: string; headSha: string; baseSha: string;
-  merged: boolean; mergedAt: string | null; mergeCommitSha: string | null;
-  createdAt: string; updatedAt: string; repo: Repo }
-export interface Comment { id: number; body: string; createdAt: string; updatedAt: string }
-export interface GitObject { type: 'blob'|'tree'|'commit'|'tag'; data: Buffer } // data = raw content, no git header
-export interface CommitMeta { sha: string; tree: string; parents: string[]; message: string;
-  authorName: string; authorEmail: string; authorTime: number; committerName: string;
-  committerEmail: string; committerTime: number; files: Map<string, string> } // files: path -> blob sha
-
-export function createStore(): Store;
-export interface Store {
-  repos: Map<string, Repo>; // key `${owner}/${name}`
-  getRepo(owner: string, name: string): Repo | undefined; // owner must == VIEWER.login
-  createRepo(name: string, isPrivate: boolean, description: string): Repo | { error: 'exists' };
-  deleteRepo(repo: Repo): void;
-  listRepos(): Repo[]; // creation order
-  createLabel(repo: Repo, name: string, color?: string): Label;
-  createIssue(repo: Repo, title: string, body: string, labelNames?: string[]): Issue | { error: 'bad-label'; label: string };
-  getIssue(repo: Repo, n: number): Issue | undefined;
-  listIssues(repo: Repo, opts: { state?: string; sort?: string; direction?: string }): Issue[];
-  patchIssue(repo: Repo, n: number, patch: { state?: string; title?: string; body?: string }): Issue | undefined;
-  createComment(repo: Repo, issueNumber: number, body: string): Comment | undefined;
-  listComments(repo: Repo, issueNumber: number): Comment[];
-  createBranch(repo: Repo, branch: string, sha: string): boolean; // false if sha unknown
-  listBranches(repo: Repo): { name: string; sha: string }[];
-  // Commit `changes` (path -> Buffer content, or null to delete) on `branch`; returns the commit sha.
-  // Creates blob/tree/commit objects. `message` is exact. Works on an unborn repo (no parent).
-  commitFiles(repo: Repo, branch: string, message: string, changes: Map<string, Buffer | null>): string;
-  getFileAt(repo: Repo, ref: string, path: string): { blobSha: string; bytes: Buffer } | { error: 'not-found' | 'is-dir' };
-  listDirAt(repo: Repo, ref: string, dir: string): { type: 'file' | 'dir'; name: string; path: string; sha: string }[] | { error: 'not-found' };
-  listCommits(repo: Repo, ref?: string): { sha: string; message: string }[]; // newest first, walking parents
-  createPull(repo: Repo, head: string, base: string, title: string, body: string): Pull | { error: 'no-head' | 'no-base' };
-  getPull(repo: Repo, n: number): Pull | undefined;
-  listPulls(repo: Repo, state?: string): Pull[]; // default open only; 'all' = open+closed
-  pullFiles(repo: Repo, pr: Pull): { filename: string; status: string; additions: number; deletions: number; changes: number }[];
-  mergePull(repo: Repo, pr: Pull): { ok: true; sha: string; message: string } | { ok: false; reason: 'conflict' | 'already' };
-  // Git object helpers (also used by git.ts)
-  storeObject(repo: Repo, type: GitObject['type'], data: Buffer): string; // returns sha1
-  getObject(repo: Repo, sha: string): GitObject | undefined;
-  refTip(repo: Repo, ref: string): string | undefined; // 'refs/heads/main' style
-  setRef(repo: Repo, ref: string, sha: string | null): void; // null = delete ref
-  mergeBase(repo: Repo, a: string, b: string): string | undefined;
-  isAncestor(repo: Repo, anc: string, desc: string): boolean;
-  treeFiles(repo: Repo, commitSha: string): Map<string, string> | undefined; // path -> blob sha
-}
-```
+- `User` — `{ id, login, name, email }`. `VIEWER` is adaiversen. `SHOP_TOKEN`
+  is the env token string. `DEFAULT_BRANCH` is `'main'`.
+- `nowIso()` — the logical clock as an ISO string, +1s per call.
+  `nowEpochSec()` — the same clock as epoch seconds.
+- `globalId(kind, ...parts)` builds an opaque base64url id; `decodeGlobalId(id)`
+  takes one apart into `{ kind, parts }` (or null).
+- `Repo` — `{ id, name, owner, private, description, defaultBranch, createdAt,
+  updatedAt, counter, labels, issues, pulls, comments, commentSeq, objects,
+  refs, commits }`.
+- `Label` — `{ name, color, description? }`.
+- `Issue` — `{ id, number, title, body, state: 'open'|'closed', labels,
+  createdAt, updatedAt, repo }`.
+- `Pull` — `{ id, number, title, body, state, headRef, baseRef, headSha,
+  baseSha, merged, mergedAt, mergeCommitSha, createdAt, updatedAt, repo }`.
+- `Comment` — `{ id, body, createdAt, updatedAt }`.
+- `GitObject` — `{ type: 'blob'|'tree'|'commit'|'tag', data: Buffer }`, where
+  data is the raw content with no git header.
+- `CommitMeta` — `{ sha, tree, parents, message, authorName, authorEmail,
+  authorTime, committerName, committerEmail, committerTime, files }`, with
+  files mapping path to blob sha.
+- `createStore()` returns the `Store`: `repos` is a `Map<string, Repo>` keyed
+  `${owner}/${name}`.
+- `getRepo(owner, name)` — undefined unless the owner is the viewer login.
+  `createRepo(name, isPrivate, description)` — a Repo, or `{ error: 'exists' }`.
+  `deleteRepo(repo)` removes one. `listRepos()` returns creation order.
+- `createLabel(repo, name, color?)` makes a label. `createIssue(repo, title,
+  body, labelNames?)` makes an issue, or `{ error: 'bad-label', label }`.
+  `getIssue(repo, n)`, `listIssues(repo, opts)` with `{ state, sort,
+  direction }`, `patchIssue(repo, n, patch)` with `{ state, title, body }`.
+- `createComment(repo, issueNumber, body)`, `listComments(repo, issueNumber)`.
+- `createBranch(repo, branch, sha)` — false when the sha is unknown.
+  `listBranches(repo)` answers `[{ name, sha }]`.
+- `commitFiles(repo, branch, message, changes)` commits a map of
+  path-to-Buffer (or null to delete) on a branch and returns the commit sha.
+  It creates the blob/tree/commit objects and works on an unborn repo.
+- `getFileAt(repo, ref, path)` — `{ blobSha, bytes }`, or
+  `{ error: 'not-found' | 'is-dir' }`. `listDirAt(repo, ref, dir)` — entries
+  of `{ type, name, path, sha }`, or `{ error: 'not-found' }`.
+- `listCommits(repo, ref?)` — `[{ sha, message }]`, newest first, walking
+  parents.
+- `createPull(repo, head, base, title, body)` — a Pull, or
+  `{ error: 'no-head' | 'no-base' }`. `getPull(repo, n)`, `listPulls(repo,
+  state?)` — open only by default, `'all'` for open+closed.
+- `pullFiles(repo, pr)` — `[{ filename, status, additions, deletions,
+  changes }]`. `mergePull(repo, pr)` — `{ ok: true, sha, message }`, or
+  `{ ok: false, reason: 'conflict' | 'already' }`.
+- Object helpers, also used by git.ts: `storeObject(repo, type, data)` returns
+  the sha1; `getObject(repo, sha)`; `refTip(repo, ref)` for `'refs/heads/main'`
+  style refs; `setRef(repo, ref, sha | null)` where null deletes the ref;
+  `mergeBase(repo, a, b)`; `isAncestor(repo, anc, desc)`;
+  `treeFiles(repo, commitSha)` — path-to-blob-sha, or undefined.
 
 ## gitobj.ts API (FROZEN)
-```ts
-export function sha1(data: Buffer): string;
-export function gitObjectBytes(type: string, data: Buffer): Buffer; // "<type> <len>\0" + data
-export function makeBlob(content: Buffer): { sha: string; bytes: Buffer };
-export function buildTrees(files: Map<string, string> /* path -> blob sha */): { root: string; objects: Map<string, Buffer> };
-export function makeCommit(opts: { tree: string; parents: string[]; message: string;
-  authorName: string; authorEmail: string; authorTime: number; committerName: string;
-  committerEmail: string; committerTime: number }): { sha: string; bytes: Buffer };
-export function parseCommit(data: Buffer): { tree: string; parents: string[]; message: string;
-  authorLine: string; committerLine: string; raw: Buffer };
-export function parseTree(data: Buffer): { mode: string; name: string; sha: string }[];
-```
+- `sha1(data)` — the hex SHA-1 of a buffer.
+- `gitObjectBytes(type, data)` — `"<type> <len>\0"` plus the data.
+- `makeBlob(content)` — `{ sha, bytes }` for a blob.
+- `buildTrees(files)` takes a path-to-blob-sha map and returns `{ root, objects }`,
+  the root tree sha plus every tree object as sha-to-raw-bytes.
+- `makeCommit(opts)` takes `{ tree, parents, message, authorName, authorEmail,
+  authorTime, committerName, committerEmail, committerTime }` and returns
+  `{ sha, bytes }`.
+- `parseCommit(data)` returns `{ tree, parents, message, authorLine,
+  committerLine, raw }`.
+- `parseTree(data)` returns `{ mode, name, sha }[]`.
 
 ## REST rules (from spec-rest.md — implementers read the full spec)
 - Everything lives under /api/v3. GET / and /api/v3 both answer 200 with
