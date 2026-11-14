@@ -2,10 +2,20 @@
 // Auth is enforced by the router before this handler runs; this module only
 // routes /api/v3/* and answers per spec-rest.md. No fs, no network, and no
 // wall clock in response data (the store's logical clock only).
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type {
+  IncomingMessage,
+  ServerResponse,
+} from 'node:http';
 import type { HandlerCtx } from './httputil.ts';
-import type { Issue, Pull, Repo } from './store.ts';
-import { VIEWER, nowIso } from './store.ts';
+import type {
+  Issue,
+  Pull,
+  Repo,
+} from './store.ts';
+import {
+  VIEWER,
+  nowIso,
+} from './store.ts';
 import {
   jsonError,
   parseJsonBody,

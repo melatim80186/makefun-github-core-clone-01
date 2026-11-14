@@ -1,11 +1,29 @@
 // GraphQL v4 executor for the forge (a targeted executor, not a general engine).
 // It answers the documents gh and github-mcp-server send by matching on the
 // operation text, not by parsing a full GraphQL AST.
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type {
+  IncomingMessage,
+  ServerResponse,
+} from 'node:http';
 import type { HandlerCtx } from './httputil.ts';
-import { jsonError, parseJsonBody, pathOf, readBody, sendJson } from './httputil.ts';
-import { decodeGlobalId, globalId, SHOP_TOKEN, VIEWER } from './store.ts';
-import type { Issue, Pull, Repo } from './store.ts';
+import {
+  jsonError,
+  parseJsonBody,
+  pathOf,
+  readBody,
+  sendJson,
+} from './httputil.ts';
+import {
+  decodeGlobalId,
+  globalId,
+  SHOP_TOKEN,
+  VIEWER,
+} from './store.ts';
+import type {
+  Issue,
+  Pull,
+  Repo,
+} from './store.ts';
 
 // Fields each introspected type reports, in the order the suite expects.
 const TYPE_FIELDS: Record<string, string[]> = {

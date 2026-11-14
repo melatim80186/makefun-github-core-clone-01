@@ -1,13 +1,27 @@
 // HTTP server + router for the forge. Auth lives here for /api/v3 and git;
 // /api/graphql and /mcp answer their own 401s, so they check auth themselves.
 // /healthz takes no auth at all.
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { SHOP_TOKEN, VIEWER, createStore } from './store.ts';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from 'node:http';
+import {
+  SHOP_TOKEN,
+  VIEWER,
+  createStore,
+} from './store.ts';
 import { handleRest } from './rest.ts';
 import { handleGraphQL } from './graphql.ts';
 import { handleMcp } from './mcp.ts';
 import { handleGit } from './git.ts';
-import { jsonError, pathOf, sendJson, type HandlerCtx } from './httputil.ts';
+import {
+  jsonError,
+  pathOf,
+  sendJson,
+  type HandlerCtx,
+} from './httputil.ts';
 
 let requestCounter = 0;
 

@@ -1,7 +1,10 @@
 // Small HTTP plumbing shared by every forge handler: JSON replies, body
 // reading with a size cap, and URL parsing. Nothing here knows about repos,
 // issues, or git — it only moves bytes and shapes responses.
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type {
+  IncomingMessage,
+  ServerResponse,
+} from 'node:http';
 import type { Store } from './store.ts';
 
 /** Everything a handler needs to answer one request. */

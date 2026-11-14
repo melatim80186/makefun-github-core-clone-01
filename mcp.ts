@@ -1,9 +1,23 @@
 // MCP endpoint: JSON-RPC 2.0 over POST /mcp (Streamable HTTP, JSON answers).
-import type { IncomingMessage, ServerResponse } from 'node:http';
+import type {
+  IncomingMessage,
+  ServerResponse,
+} from 'node:http';
 import type { HandlerCtx } from './httputil.ts';
-import { jsonError, parseJsonBody, pathOf, readBody, sendEmpty, sendJson } from './httputil.ts';
+import {
+  jsonError,
+  parseJsonBody,
+  pathOf,
+  readBody,
+  sendEmpty,
+  sendJson,
+} from './httputil.ts';
 import { SHOP_TOKEN } from './store.ts';
-import type { Issue, Pull, Repo } from './store.ts';
+import type {
+  Issue,
+  Pull,
+  Repo,
+} from './store.ts';
 
 const SERVER_INFO = { name: 'github-core-clone-forge', version: '1.0.0' };
 const SUPPORTED_VERSIONS: string[] = ['2026-07-28', '2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];

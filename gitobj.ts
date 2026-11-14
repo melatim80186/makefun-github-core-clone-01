@@ -1,7 +1,9 @@
 // Pure git object model: SHA-1 ids, blob/tree/commit/tag bytes, and tree
 // building/parsing. No I/O and no mutable state — store.ts and git.ts call
 // into here for everything content-addressed.
-import { createHash } from 'node:crypto';
+import {
+  createHash,
+} from 'node:crypto';
 
 export function sha1(data: Buffer): string {
   const hash = createHash('sha1');

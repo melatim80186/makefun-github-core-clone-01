@@ -5,7 +5,9 @@
 // MAKEFUN_ENV_URL pointing at the environment server, and this file only
 // speaks the environment's two endpoints (/register and /done). All of the
 // GitHub-compatible behaviour lives in app.ts and the modules behind it.
-import { createApp } from './app.ts';
+import {
+  createApp,
+} from './app.ts';
 
 const REGISTER_PATH = '/register';
 const DONE_PATH = '/done';
