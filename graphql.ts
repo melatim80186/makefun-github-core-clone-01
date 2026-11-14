@@ -132,28 +132,20 @@ function mergeableOf(repo: Repo, pr: Pull, ctx: HandlerCtx): string {
 function issueNode(repo: Repo, issue: Issue): Record<string, unknown> {
   return {
     id: globalId('I', repo.id, issue.number),
-    number: issue.number,
-    title: issue.title,
-    state: gqlIssueState(issue.state),
-    body: issue.body,
-    createdAt: issue.createdAt,
-    updatedAt: issue.updatedAt,
+    number: issue.number, title: issue.title,
+    state: gqlIssueState(issue.state), body: issue.body,
+    createdAt: issue.createdAt, updatedAt: issue.updatedAt,
   };
 }
 
 function prNode(repo: Repo, pr: Pull, ctx: HandlerCtx): Record<string, unknown> {
   return {
     id: globalId('P', repo.id, pr.number),
-    number: pr.number,
-    title: pr.title,
-    body: pr.body,
-    state: gqlPrState(pr),
-    merged: pr.merged,
+    number: pr.number, title: pr.title, body: pr.body,
+    state: gqlPrState(pr), merged: pr.merged,
     mergeable: mergeableOf(repo, pr, ctx),
-    headRefName: pr.headRef,
-    baseRefName: pr.baseRef,
-    createdAt: pr.createdAt,
-    updatedAt: pr.updatedAt,
+    headRefName: pr.headRef, baseRefName: pr.baseRef,
+    createdAt: pr.createdAt, updatedAt: pr.updatedAt,
   };
 }
 
@@ -216,17 +208,13 @@ function executeRepository(query: string, variables: Record<string, unknown>, ct
   if (repo === undefined) return { data: { repository: null } };
   const repoData: Record<string, unknown> = {
     id: globalId('R', repo.id),
-    databaseId: repo.id,
-    name: repo.name,
+    databaseId: repo.id, name: repo.name,
     nameWithOwner: `${repo.owner}/${repo.name}`,
     owner: { login: repo.owner },
     defaultBranchRef: { name: repo.defaultBranch },
-    viewerPermission: 'ADMIN',
-    hasIssuesEnabled: true,
-    description: repo.description,
-    private: repo.private,
-    createdAt: repo.createdAt,
-    updatedAt: repo.updatedAt,
+    viewerPermission: 'ADMIN', hasIssuesEnabled: true,
+    description: repo.description, private: repo.private,
+    createdAt: repo.createdAt, updatedAt: repo.updatedAt,
     url: `${ctx.baseUrl}/${repo.owner}/${repo.name}`,
   };
   // repository.issue(number: ...)

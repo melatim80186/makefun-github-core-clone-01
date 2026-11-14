@@ -59,20 +59,14 @@ function repoPageUrl(ctx: HandlerCtx, repo: Repo): string {
 function repoShape(ctx: HandlerCtx, repo: Repo): JsonMap {
   const page = repoPageUrl(ctx, repo);
   return {
-    id: repo.id,
-    name: repo.name,
+    id: repo.id, name: repo.name,
     full_name: `${repo.owner}/${repo.name}`,
-    private: repo.private,
-    description: repo.description,
+    private: repo.private, description: repo.description,
     default_branch: repo.defaultBranch,
     owner: { login: repo.owner, id: VIEWER.id, type: 'User' },
-    html_url: page,
-    clone_url: `${page}.git`,
-    git_url: `${page}.git`,
+    html_url: page, clone_url: `${page}.git`, git_url: `${page}.git`,
     ssh_url: `git@github.com:${repo.owner}/${repo.name}.git`,
-    created_at: repo.createdAt,
-    updated_at: repo.updatedAt,
-    pushed_at: repo.updatedAt,
+    created_at: repo.createdAt, updated_at: repo.updatedAt, pushed_at: repo.updatedAt,
   };
 }
 
@@ -83,15 +77,11 @@ function labelShape(label: { name: string; color: string; description?: string }
 function issueShape(ctx: HandlerCtx, repo: Repo, issue: Issue): JsonMap {
   const commentCount = ctx.store.listComments(repo, issue.number).length;
   return {
-    id: issue.id,
-    number: issue.number,
-    title: issue.title,
-    body: issue.body,
-    state: issue.state,
+    id: issue.id, number: issue.number,
+    title: issue.title, body: issue.body, state: issue.state,
     labels: issue.labels.map(labelShape),
     user: { login: repo.owner, id: VIEWER.id, type: 'User' },
-    created_at: issue.createdAt,
-    updated_at: issue.updatedAt,
+    created_at: issue.createdAt, updated_at: issue.updatedAt,
     html_url: `${repoPageUrl(ctx, repo)}/issues/${issue.number}`,
     url: `${ctx.baseUrl}/api/v3/repos/${repo.owner}/${repo.name}/issues/${issue.number}`,
     comments: commentCount,
@@ -100,18 +90,12 @@ function issueShape(ctx: HandlerCtx, repo: Repo, issue: Issue): JsonMap {
 
 function pullShape(ctx: HandlerCtx, repo: Repo, pr: Pull): JsonMap {
   return {
-    id: pr.id,
-    number: pr.number,
-    title: pr.title,
-    body: pr.body,
-    state: pr.state,
+    id: pr.id, number: pr.number,
+    title: pr.title, body: pr.body, state: pr.state,
     head: { ref: pr.headRef, sha: pr.headSha, label: `${repo.owner}:${pr.headRef}` },
     base: { ref: pr.baseRef, sha: pr.baseSha, label: `${repo.owner}:${pr.baseRef}` },
-    merged: pr.merged,
-    merged_at: pr.mergedAt,
-    merge_commit_sha: pr.mergeCommitSha,
-    created_at: pr.createdAt,
-    updated_at: pr.updatedAt,
+    merged: pr.merged, merged_at: pr.mergedAt, merge_commit_sha: pr.mergeCommitSha,
+    created_at: pr.createdAt, updated_at: pr.updatedAt,
     html_url: `${repoPageUrl(ctx, repo)}/pull/${pr.number}`,
     url: `${ctx.baseUrl}/api/v3/repos/${repo.owner}/${repo.name}/pulls/${pr.number}`,
   };
@@ -272,7 +256,10 @@ async function serveRest(req: IncomingMessage, res: ServerResponse, ctx: Handler
           const after = ctx.store.getFileAt(repo, branch, filePath);
           if ('error' in after) return jsonError(res, ctx, 500, 'Failed to read back created file');
           sendJson(res, ctx, 201, {
-            content: { type: 'file', encoding: 'base64', sha: after.blobSha, size: after.bytes.length, name: filePath.split('/').pop(), path: filePath },
+            content: {
+              type: 'file', encoding: 'base64', sha: after.blobSha,
+              size: after.bytes.length, name: filePath.split('/').pop(), path: filePath,
+            },
             commit: { sha: commitSha },
           });
           return;
@@ -284,7 +271,10 @@ async function serveRest(req: IncomingMessage, res: ServerResponse, ctx: Handler
         const after = ctx.store.getFileAt(repo, branch, filePath);
         if ('error' in after) return jsonError(res, ctx, 500, 'Failed to read back updated file');
         sendJson(res, ctx, 200, {
-          content: { type: 'file', encoding: 'base64', sha: after.blobSha, size: after.bytes.length, name: filePath.split('/').pop(), path: filePath },
+          content: {
+            type: 'file', encoding: 'base64', sha: after.blobSha,
+            size: after.bytes.length, name: filePath.split('/').pop(), path: filePath,
+          },
           commit: { sha: commitSha },
         });
         return;
@@ -307,13 +297,10 @@ async function serveRest(req: IncomingMessage, res: ServerResponse, ctx: Handler
           return sendNotFound(res, ctx);
         }
         sendJson(res, ctx, 200, {
-          type: 'file',
-          encoding: 'base64',
+          type: 'file', encoding: 'base64',
           content: got.bytes.toString('base64'),
-          sha: got.blobSha,
-          size: got.bytes.length,
-          name: filePath.split('/').pop(),
-          path: filePath,
+          sha: got.blobSha, size: got.bytes.length,
+          name: filePath.split('/').pop(), path: filePath,
         });
         return;
       }
@@ -409,10 +396,8 @@ async function serveRest(req: IncomingMessage, res: ServerResponse, ctx: Handler
           const comment = ctx.store.createComment(repo, n, toText(body.body) ?? '');
           if (comment === undefined) return sendNotFound(res, ctx);
           sendJson(res, ctx, 201, {
-            id: comment.id,
-            body: comment.body,
-            created_at: comment.createdAt,
-            updated_at: comment.updatedAt,
+            id: comment.id, body: comment.body,
+            created_at: comment.createdAt, updated_at: comment.updatedAt,
             user: { login: repo.owner, id: VIEWER.id, type: 'User' },
             html_url: `${repoPageUrl(ctx, repo)}/issues/${n}#issuecomment-${comment.id}`,
             url: `${ctx.baseUrl}/api/v3/repos/${repo.owner}/${repo.name}/issues/${n}/comments/${comment.id}`,
@@ -422,10 +407,8 @@ async function serveRest(req: IncomingMessage, res: ServerResponse, ctx: Handler
         if (method === 'GET') {
           if (ctx.store.getIssue(repo, n) === undefined) return sendNotFound(res, ctx);
           sendJson(res, ctx, 200, ctx.store.listComments(repo, n).map((c) => ({
-            id: c.id,
-            body: c.body,
-            created_at: c.createdAt,
-            updated_at: c.updatedAt,
+            id: c.id, body: c.body,
+            created_at: c.createdAt, updated_at: c.updatedAt,
             user: { login: repo.owner, id: VIEWER.id, type: 'User' },
           })));
           return;
