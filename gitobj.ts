@@ -1,20 +1,23 @@
-// Pure git object model: SHA-1, blob/tree/commit/tag bytes, tree build/parse.
-// No I/O, no state. Used by store.ts and git.ts.
+// Pure git object model: SHA-1 ids, blob/tree/commit/tag bytes, and tree
+// building/parsing. No I/O and no mutable state — store.ts and git.ts call
+// into here for everything content-addressed.
 import { createHash } from 'node:crypto';
 
 export function sha1(data: Buffer): string {
-  return createHash('sha1').update(data).digest('hex');
+  const hash = createHash('sha1');
+  hash.update(data);
+  return hash.digest('hex');
 }
 
-/** The on-disk object bytes: "<type> <len>\0" + data. */
+/** The stored bytes of an object: "<type> <length>\0" followed by the payload. */
 export function gitObjectBytes(type: string, data: Buffer): Buffer {
-  const header = Buffer.from(`${type} ${data.length}\0`, 'ascii');
-  return Buffer.concat([header, data]);
+  const head = Buffer.from(`${type} ${data.length}\0`, 'ascii');
+  return Buffer.concat([head, data]);
 }
 
 export function makeBlob(content: Buffer): { sha: string; bytes: Buffer } {
-  const bytes = gitObjectBytes('blob', content);
-  return { sha: sha1(bytes), bytes };
+  const raw = gitObjectBytes('blob', content);
+  return { sha: sha1(raw), bytes: raw };
 }
 
 export interface TreeEntry {
@@ -23,84 +26,93 @@ export interface TreeEntry {
   sha: string;
 }
 
-/** Parse a raw tree object body into entries. */
+/** Parse a raw tree body into its entries, in stored order. */
 export function parseTree(data: Buffer): TreeEntry[] {
-  const entries: TreeEntry[] = [];
-  let i = 0;
-  while (i < data.length) {
-    const space = data.indexOf(0x20, i);
-    if (space === -1) break;
-    const mode = data.subarray(i, space).toString('ascii');
-    const nul = data.indexOf(0x00, space + 1);
-    if (nul === -1) break;
-    const name = data.subarray(space + 1, nul).toString('utf8');
-    const sha = data.subarray(nul + 1, nul + 21).toString('hex');
-    entries.push({ mode, name, sha });
-    i = nul + 21;
+  const found: TreeEntry[] = [];
+  let pos = 0;
+  while (pos < data.length) {
+    const sp = data.indexOf(0x20, pos);
+    if (sp === -1) break;
+    const mode = data.subarray(pos, sp).toString('ascii');
+    const zero = data.indexOf(0x00, sp + 1);
+    if (zero === -1) break;
+    const name = data.subarray(sp + 1, zero).toString('utf8');
+    const sha = data.subarray(zero + 1, zero + 21).toString('hex');
+    found.push({ mode, name, sha });
+    pos = zero + 21;
   }
-  return entries;
+  return found;
 }
 
-function serializeTree(entries: TreeEntry[]): Buffer {
-  const parts: Buffer[] = [];
-  for (const e of entries) {
-    parts.push(Buffer.from(`${e.mode} ${e.name}\0`, 'utf8'));
-    parts.push(Buffer.from(e.sha, 'hex'));
+function encodeTree(entries: TreeEntry[]): Buffer {
+  const chunks: Buffer[] = [];
+  for (const entry of entries) {
+    chunks.push(Buffer.from(`${entry.mode} ${entry.name}\0`, 'utf8'));
+    chunks.push(Buffer.from(entry.sha, 'hex'));
   }
-  return Buffer.concat(parts);
+  return Buffer.concat(chunks);
+}
+
+/** Sort key for a tree entry: directories compare as if named with '/'. */
+function treeSortKey(entry: TreeEntry): string {
+  return entry.mode === '40000' ? `${entry.name}/` : entry.name;
 }
 
 /**
  * Build every tree object for a flat file map (path -> blob sha).
  * Returns the root tree sha plus all tree objects (sha -> raw tree bytes).
- * Tree entries are sorted git-style: by name, directories as if suffixed with '/'.
+ * Entries sort git-style: by name, directories as if suffixed with '/'.
  */
 export function buildTrees(files: Map<string, string>): { root: string; objects: Map<string, Buffer> } {
   const objects = new Map<string, Buffer>();
-  // dir path -> Map<name, {mode, sha}>
-  const dirs = new Map<string, Map<string, { mode: string; sha: string }>>();
-  const ensureDir = (dir: string): Map<string, { mode: string; sha: string }> => {
-    let d = dirs.get(dir);
-    if (!d) {
-      d = new Map();
-      dirs.set(dir, d);
+  // Directory path -> its entries (name -> {mode, sha}; subtree shas filled later).
+  const byDir = new Map<string, Map<string, { mode: string; sha: string }>>();
+  const dirMap = (dir: string): Map<string, { mode: string; sha: string }> => {
+    let table = byDir.get(dir);
+    if (table === undefined) {
+      table = new Map();
+      byDir.set(dir, table);
     }
-    return d;
+    return table;
   };
-  ensureDir('');
+  dirMap('');
   for (const [path, blobSha] of files) {
     const parts = path.split('/');
     let dir = '';
-    for (let i = 0; i < parts.length - 1; i += 1) {
-      const name = parts[i] as string;
-      const parent = ensureDir(dir);
-      const childDir = dir === '' ? name : `${dir}/${name}`;
-      ensureDir(childDir);
-      if (!parent.has(name)) parent.set(name, { mode: '40000', sha: '' });
-      dir = childDir;
+    for (let depth = 0; depth < parts.length - 1; depth += 1) {
+      const segment = parts[depth] as string;
+      const parent = dirMap(dir);
+      const child = dir === '' ? segment : `${dir}/${segment}`;
+      dirMap(child);
+      if (!parent.has(segment)) parent.set(segment, { mode: '40000', sha: '' });
+      dir = child;
     }
     const leaf = parts[parts.length - 1] as string;
-    ensureDir(dir).set(leaf, { mode: '100644', sha: blobSha });
+    dirMap(dir).set(leaf, { mode: '100644', sha: blobSha });
   }
-  // Build bottom-up: deepest dirs first ('': depth 0).
-  const depth = (d: string): number => (d === '' ? 0 : d.split('/').length);
-  const dirPaths = [...dirs.keys()].sort((a, b) => depth(b) - depth(a));
-  const dirSha = new Map<string, string>();
-  for (const dir of dirPaths) {
-    const entries = [...(dirs.get(dir) as Map<string, { mode: string; sha: string }>).entries()].map(
-      ([name, v]) => ({ mode: v.mode, name, sha: v.mode === '40000' ? (dirSha.get(dir === '' ? name : `${dir}/${name}`) as string) : v.sha }),
-    );
-    entries.sort((a, b) => {
-      const ka = a.mode === '40000' ? `${a.name}/` : a.name;
-      const kb = b.mode === '40000' ? `${b.name}/` : b.name;
+  // Build bottom-up: deepest directories first ('' is depth 0).
+  const dirDepth = (d: string): number => (d === '' ? 0 : d.split('/').length);
+  const ordered = [...byDir.keys()].sort((a, b) => dirDepth(b) - dirDepth(a));
+  const shaOfDir = new Map<string, string>();
+  for (const dir of ordered) {
+    const rows: TreeEntry[] = [];
+    for (const [name, value] of dirMap(dir).entries()) {
+      const sha = value.mode === '40000'
+        ? (shaOfDir.get(dir === '' ? name : `${dir}/${name}`) as string)
+        : value.sha;
+      rows.push({ mode: value.mode, name, sha });
+    }
+    rows.sort((a, b) => {
+      const ka = treeSortKey(a);
+      const kb = treeSortKey(b);
       return ka < kb ? -1 : ka > kb ? 1 : 0;
     });
-    const raw = serializeTree(entries);
+    const raw = encodeTree(rows);
     const sha = sha1(gitObjectBytes('tree', raw));
     objects.set(sha, raw);
-    dirSha.set(dir, sha);
+    shaOfDir.set(dir, sha);
   }
-  return { root: dirSha.get('') as string, objects };
+  return { root: shaOfDir.get('') as string, objects };
 }
 
 export interface CommitOptions {
@@ -116,12 +128,12 @@ export interface CommitOptions {
 }
 
 export function makeCommit(opts: CommitOptions): { sha: string; bytes: Buffer } {
-  const lines: string[] = [`tree ${opts.tree}`];
-  for (const p of opts.parents) lines.push(`parent ${p}`);
-  lines.push(`author ${opts.authorName} <${opts.authorEmail}> ${opts.authorTime} +0000`);
-  lines.push(`committer ${opts.committerName} <${opts.committerEmail}> ${opts.committerTime} +0000`);
-  const message = opts.message.endsWith('\n') ? opts.message : `${opts.message}\n`;
-  const raw = Buffer.from(`${lines.join('\n')}\n\n${message}`, 'utf8');
+  const head: string[] = [`tree ${opts.tree}`];
+  for (const parent of opts.parents) head.push(`parent ${parent}`);
+  head.push(`author ${opts.authorName} <${opts.authorEmail}> ${opts.authorTime} +0000`);
+  head.push(`committer ${opts.committerName} <${opts.committerEmail}> ${opts.committerTime} +0000`);
+  const body = opts.message.endsWith('\n') ? opts.message : `${opts.message}\n`;
+  const raw = Buffer.from(`${head.join('\n')}\n\n${body}`, 'utf8');
   const bytes = gitObjectBytes('commit', raw);
   return { sha: sha1(bytes), bytes };
 }
@@ -135,18 +147,18 @@ export interface ParsedCommit {
   raw: Buffer;
 }
 
-/** Parse a raw commit object body. Message has one trailing newline stripped. */
+/** Parse a raw commit body. The message loses one trailing newline, if any. */
 export function parseCommit(data: Buffer): ParsedCommit {
   const text = data.toString('utf8');
-  const blank = text.indexOf('\n\n');
-  const header = blank === -1 ? text : text.slice(0, blank);
-  let message = blank === -1 ? '' : text.slice(blank + 2);
+  const gap = text.indexOf('\n\n');
+  const head = gap === -1 ? text : text.slice(0, gap);
+  let message = gap === -1 ? '' : text.slice(gap + 2);
   if (message.endsWith('\n')) message = message.slice(0, -1);
   let tree = '';
   const parents: string[] = [];
   let authorLine = '';
   let committerLine = '';
-  for (const line of header.split('\n')) {
+  for (const line of head.split('\n')) {
     if (line.startsWith('tree ')) tree = line.slice(5).trim();
     else if (line.startsWith('parent ')) parents.push(line.slice(7).trim());
     else if (line.startsWith('author ')) authorLine = line.slice(7);
@@ -155,9 +167,9 @@ export function parseCommit(data: Buffer): ParsedCommit {
   return { tree, parents, authorLine, committerLine, message, raw: data };
 }
 
-/** Parse "Name <email> 1234567890 +0000" into parts; falls back to raw string. */
+/** Split "Name <email> 1234567890 +0000" into parts; anything else stays raw. */
 export function parseIdent(line: string): { name: string; email: string; time: number } {
   const m = /^(.*) <([^>]*)> (\d+) [+-]\d{4}$/.exec(line.trim());
-  if (!m) return { name: line.trim(), email: '', time: 0 };
+  if (m === null) return { name: line.trim(), email: '', time: 0 };
   return { name: m[1] as string, email: m[2] as string, time: Number(m[3]) };
 }

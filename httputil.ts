@@ -1,29 +1,38 @@
-// Shared HTTP helpers for the forge handlers.
+// Small HTTP plumbing shared by every forge handler: JSON replies, body
+// reading with a size cap, and URL parsing. Nothing here knows about repos,
+// issues, or git — it only moves bytes and shapes responses.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Store } from './store.ts';
 
+/** Everything a handler needs to answer one request. */
 export interface HandlerCtx {
   store: Store;
   requestId: string;
-  baseUrl: string; // e.g. http://127.0.0.1:41234 (from the Host header)
+  /** Origin of this request, e.g. http://127.0.0.1:41234 (from Host). */
+  baseUrl: string;
 }
 
-const JSON_TYPE = 'application/json; charset=utf-8';
+const JSON_MEDIA_TYPE = 'application/json; charset=utf-8';
+/** Largest request body the forge will accept (64 MiB). */
 export const MAX_BODY_BYTES = 64 * 1024 * 1024;
 
-export function sendJson(res: ServerResponse, ctx: HandlerCtx, status: number, body: unknown, headers: Record<string, string> = {}): void {
+function requestIdHeader(ctx: HandlerCtx): Record<string, string> {
+  return { 'x-github-request-id': ctx.requestId };
+}
+
+export function sendJson(res: ServerResponse, ctx: HandlerCtx, status: number, body: unknown, extra: Record<string, string> = {}): void {
   const text = `${JSON.stringify(body)}\n`;
   res.writeHead(status, {
-    'content-type': JSON_TYPE,
+    'content-type': JSON_MEDIA_TYPE,
     'content-length': Buffer.byteLength(text),
-    'x-github-request-id': ctx.requestId,
-    ...headers,
+    ...requestIdHeader(ctx),
+    ...extra,
   });
   res.end(text);
 }
 
-export function sendEmpty(res: ServerResponse, ctx: HandlerCtx, status: number, headers: Record<string, string> = {}): void {
-  res.writeHead(status, { 'x-github-request-id': ctx.requestId, ...headers });
+export function sendEmpty(res: ServerResponse, ctx: HandlerCtx, status: number, extra: Record<string, string> = {}): void {
+  res.writeHead(status, { ...requestIdHeader(ctx), ...extra });
   res.end();
 }
 
@@ -31,37 +40,39 @@ export function jsonError(res: ServerResponse, ctx: HandlerCtx, status: number, 
   sendJson(res, ctx, status, { message });
 }
 
-/** Read the full request body as a Buffer. Rejects on overflow. */
+/** Slurp the whole request body. Rejects with Error('body_too_large') past the cap. */
 export function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let total = 0;
-    let failed = false;
+    const pieces: Buffer[] = [];
+    let bytes = 0;
+    let done = false;
+    const fail = (err: Error): void => {
+      if (done) return;
+      done = true;
+      reject(err);
+    };
     req.on('data', (chunk: Buffer) => {
-      if (failed) return;
-      total += chunk.length;
-      if (total > MAX_BODY_BYTES) {
-        failed = true;
-        reject(new Error('body_too_large'));
+      if (done) return;
+      bytes += chunk.length;
+      if (bytes > MAX_BODY_BYTES) {
+        fail(new Error('body_too_large'));
         return;
       }
-      chunks.push(chunk);
+      pieces.push(chunk);
     });
     req.on('end', () => {
-      if (!failed) resolve(Buffer.concat(chunks));
-    });
-    req.on('error', (err) => {
-      if (!failed) {
-        failed = true;
-        reject(err);
+      if (!done) {
+        done = true;
+        resolve(Buffer.concat(pieces));
       }
     });
+    req.on('error', fail);
   });
 }
 
 /**
- * Parse a request body as JSON. Returns { ok: true, value } (value may be undefined
- * when the body is empty), or { ok: false } when the body is present but not valid JSON.
+ * Decode a body buffer as JSON. An empty body decodes to undefined (the
+ * caller decides what that means); anything present-but-invalid fails.
  */
 export function parseJsonBody(buf: Buffer): { ok: true; value: unknown } | { ok: false } {
   if (buf.length === 0) return { ok: true, value: undefined };
@@ -72,33 +83,34 @@ export function parseJsonBody(buf: Buffer): { ok: true; value: unknown } | { ok:
   }
 }
 
-/** Path segments of a URL pathname, percent-decoded per segment. */
+/** Split a pathname into segments, percent-decoding each one (raw on failure). */
 export function pathSegments(pathname: string): string[] {
-  return pathname
-    .split('/')
-    .filter((s) => s.length > 0)
-    .map((s) => {
-      try {
-        return decodeURIComponent(s);
-      } catch {
-        return s;
-      }
-    });
+  const out: string[] = [];
+  for (const raw of pathname.split('/')) {
+    if (raw.length === 0) continue;
+    try {
+      out.push(decodeURIComponent(raw));
+    } catch {
+      out.push(raw);
+    }
+  }
+  return out;
 }
 
-/** Parse a query string into a URLSearchParams. */
+function requestUrl(req: IncomingMessage): URL | null {
+  try {
+    return new URL(req.url ?? '/', 'http://entry');
+  } catch {
+    return null;
+  }
+}
+
+/** Query string of the request as URLSearchParams (empty when unparseable). */
 export function queryOf(req: IncomingMessage): URLSearchParams {
-  try {
-    return new URL(req.url ?? '/', 'http://entry').searchParams;
-  } catch {
-    return new URLSearchParams();
-  }
+  return requestUrl(req)?.searchParams ?? new URLSearchParams();
 }
 
+/** Pathname of the request ('/' when unparseable). */
 export function pathOf(req: IncomingMessage): string {
-  try {
-    return new URL(req.url ?? '/', 'http://entry').pathname;
-  } catch {
-    return '/';
-  }
+  return requestUrl(req)?.pathname ?? '/';
 }

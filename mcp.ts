@@ -102,37 +102,37 @@ const TOOL_REQUIRED: Record<string, string[]> = {
   merge_pull_request: ['owner', 'repo', 'pull_number'],
 };
 
-function isAuthed(req: IncomingMessage): boolean {
-  const h = req.headers.authorization;
-  if (typeof h !== 'string' || !h.startsWith('Bearer ')) return false;
-  const token = h.slice('Bearer '.length);
+function hasMcpToken(req: IncomingMessage): boolean {
+  const header = req.headers.authorization;
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return false;
+  const token = header.slice('Bearer '.length);
   if (token.length === 0) return false;
   if (SHOP_TOKEN === '') return true;
   return token === SHOP_TOKEN;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+function recordOf(value: unknown): Record<string, unknown> {
   if (value !== null && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
   return {};
 }
 
-function rpcResult(res: ServerResponse, ctx: HandlerCtx, id: unknown, result: unknown): void {
+function answerResult(res: ServerResponse, ctx: HandlerCtx, id: unknown, result: unknown): void {
   sendJson(res, ctx, 200, { jsonrpc: '2.0', id: id === undefined ? null : id, result });
 }
 
-function rpcError(res: ServerResponse, ctx: HandlerCtx, id: unknown, code: number, message: string): void {
+function answerError(res: ServerResponse, ctx: HandlerCtx, id: unknown, code: number, message: string): void {
   sendJson(res, ctx, 200, { jsonrpc: '2.0', id: id === undefined ? null : id, error: { code, message } });
 }
 
-function toolErrorResult(text: string): Record<string, unknown> {
+function failedToolCall(text: string): Record<string, unknown> {
   return { content: [{ type: 'text', text }], isError: true };
 }
 
-function toolOkResult(obj: unknown): Record<string, unknown> {
+function okToolCall(obj: unknown): Record<string, unknown> {
   return { content: [{ type: 'text', text: JSON.stringify(obj) }], structuredContent: obj };
 }
 
-function repoObj(repo: Repo): Record<string, unknown> {
+function repoCard(repo: Repo): Record<string, unknown> {
   return {
     id: repo.id,
     name: repo.name,
@@ -143,7 +143,7 @@ function repoObj(repo: Repo): Record<string, unknown> {
   };
 }
 
-function issueObj(issue: Issue): Record<string, unknown> {
+function issueCard(issue: Issue): Record<string, unknown> {
   return {
     id: issue.id,
     number: issue.number,
@@ -154,7 +154,7 @@ function issueObj(issue: Issue): Record<string, unknown> {
   };
 }
 
-function normalizeArgs(args: Record<string, unknown>): void {
+function fillArgSynonyms(args: Record<string, unknown>): void {
   // full_name "owner/repo" split (only when owner/repo are absent).
   const ownerMissing = args.owner === undefined || args.owner === null || args.owner === '';
   const repoMissing = args.repo === undefined || args.repo === null || args.repo === '';
@@ -178,58 +178,58 @@ function normalizeArgs(args: Record<string, unknown>): void {
   if (args.base === undefined && typeof args.base_ref === 'string') args.base = args.base_ref;
 }
 
-function callTool(name: string, args: Record<string, unknown>, ctx: HandlerCtx): Record<string, unknown> {
+function runTool(name: string, args: Record<string, unknown>, ctx: HandlerCtx): Record<string, unknown> {
   if (name === 'create_repo') {
     const repoName = String(args.name);
     const description = typeof args.description === 'string' ? args.description : '';
     const isPrivate = args.private === true;
     const created = ctx.store.createRepo(repoName, isPrivate, description);
     if (created !== null && typeof created === 'object' && 'error' in created) {
-      return toolErrorResult(`Repository already exists: ${repoName}`);
+      return failedToolCall(`Repository already exists: ${repoName}`);
     }
-    return toolOkResult(repoObj(created as Repo));
+    return okToolCall(repoCard(created as Repo));
   }
   if (name === 'get_repo') {
     const owner = String(args.owner ?? '');
     const repoName = String(args.repo ?? '');
     const repo = ctx.store.getRepo(owner, repoName);
-    if (!repo) return toolErrorResult(`Repository not found: ${owner}/${repoName}`);
-    return toolOkResult(repoObj(repo));
+    if (repo === undefined) return failedToolCall(`Repository not found: ${owner}/${repoName}`);
+    return okToolCall(repoCard(repo));
   }
   if (name === 'create_issue') {
     const owner = String(args.owner ?? '');
     const repoName = String(args.repo ?? '');
     const repo = ctx.store.getRepo(owner, repoName);
-    if (!repo) return toolErrorResult(`Repository not found: ${owner}/${repoName}`);
+    if (repo === undefined) return failedToolCall(`Repository not found: ${owner}/${repoName}`);
     const created = ctx.store.createIssue(repo, String(args.title ?? ''), typeof args.body === 'string' ? args.body : '');
     if (created !== null && typeof created === 'object' && 'error' in created) {
-      return toolErrorResult(`Bad label: ${(created as { label: string }).label}`);
+      return failedToolCall(`Bad label: ${(created as { label: string }).label}`);
     }
-    return toolOkResult(issueObj(created as Issue));
+    return okToolCall(issueCard(created as Issue));
   }
   if (name === 'list_issues') {
     const owner = String(args.owner ?? '');
     const repoName = String(args.repo ?? '');
     const repo = ctx.store.getRepo(owner, repoName);
-    if (!repo) return toolErrorResult(`Repository not found: ${owner}/${repoName}`);
+    if (repo === undefined) return failedToolCall(`Repository not found: ${owner}/${repoName}`);
     const state = typeof args.state === 'string' && args.state !== '' ? args.state : 'open';
     const issues = ctx.store.listIssues(repo, { state });
-    const arr = issues.map((i) => issueObj(i));
+    const arr = issues.map((i) => issueCard(i));
     return { content: [{ type: 'text', text: JSON.stringify(arr) }], structuredContent: { issues: arr } };
   }
   if (name === 'create_pull_request') {
     const owner = String(args.owner ?? '');
     const repoName = String(args.repo ?? '');
     const repo = ctx.store.getRepo(owner, repoName);
-    if (!repo) return toolErrorResult(`Repository not found: ${owner}/${repoName}`);
+    if (repo === undefined) return failedToolCall(`Repository not found: ${owner}/${repoName}`);
     const head = String(args.head ?? '');
     const base = String(args.base ?? '');
     const created = ctx.store.createPull(repo, head, base, String(args.title ?? ''), typeof args.body === 'string' ? args.body : '');
     if (created !== null && typeof created === 'object' && 'error' in created) {
-      return toolErrorResult(`Cannot create pull request: no such branch: ${head} / ${base}`);
+      return failedToolCall(`Cannot create pull request: no such branch: ${head} / ${base}`);
     }
     const pr = created as Pull;
-    const prObj: Record<string, unknown> = {
+    const prCard: Record<string, unknown> = {
       id: pr.id,
       number: pr.number,
       title: pr.title,
@@ -238,26 +238,26 @@ function callTool(name: string, args: Record<string, unknown>, ctx: HandlerCtx):
       head: { ref: pr.headRef, sha: pr.headSha },
       base: { ref: pr.baseRef, sha: pr.baseSha },
     };
-    return toolOkResult(prObj);
+    return okToolCall(prCard);
   }
   if (name === 'merge_pull_request') {
     const owner = String(args.owner ?? '');
     const repoName = String(args.repo ?? '');
     const repo = ctx.store.getRepo(owner, repoName);
-    if (!repo) return toolErrorResult(`Repository not found: ${owner}/${repoName}`);
+    if (repo === undefined) return failedToolCall(`Repository not found: ${owner}/${repoName}`);
     const n = Number(args.pull_number);
-    if (!Number.isFinite(n)) return toolErrorResult('Missing required argument: pull_number');
+    if (!Number.isFinite(n)) return failedToolCall('Missing required argument: pull_number');
     const pr = ctx.store.getPull(repo, n);
-    if (!pr) return toolErrorResult(`Pull request not found: #${n}`);
+    if (pr === undefined) return failedToolCall(`Pull request not found: #${n}`);
     const res = ctx.store.mergePull(repo, pr);
-    if (res.ok) return toolOkResult({ merged: true, sha: res.sha, number: pr.number });
+    if (res.ok) return okToolCall({ merged: true, sha: res.sha, number: pr.number });
     if (res.reason === 'already' && pr.merged) {
-      return toolOkResult({ merged: true, sha: pr.mergeCommitSha ?? '', number: pr.number });
+      return okToolCall({ merged: true, sha: pr.mergeCommitSha ?? '', number: pr.number });
     }
-    if (res.reason === 'conflict') return toolErrorResult('Merge conflict');
-    return toolErrorResult('Pull request already closed');
+    if (res.reason === 'conflict') return failedToolCall('Merge conflict');
+    return failedToolCall('Pull request already closed');
   }
-  return toolErrorResult(`Unknown tool: ${name}`);
+  return failedToolCall(`Unknown tool: ${name}`);
 }
 
 export async function handleMcp(req: IncomingMessage, res: ServerResponse, ctx: HandlerCtx): Promise<boolean> {
@@ -267,7 +267,7 @@ export async function handleMcp(req: IncomingMessage, res: ServerResponse, ctx: 
     return true;
   }
   if (req.method !== 'POST') return false;
-  if (!isAuthed(req)) {
+  if (!hasMcpToken(req)) {
     jsonError(res, ctx, 401, 'Unauthorized');
     return true;
   }
@@ -293,7 +293,7 @@ export async function handleMcp(req: IncomingMessage, res: ServerResponse, ctx: 
     const reqObj = body as Record<string, unknown>;
     rpcId = 'id' in reqObj ? reqObj.id : undefined;
     const method = typeof reqObj.method === 'string' ? reqObj.method : '';
-    const params = asRecord(reqObj.params);
+    const params = recordOf(reqObj.params);
     if (method === 'notifications/initialized') {
       sendEmpty(res, ctx, 202);
       return true;
@@ -304,48 +304,48 @@ export async function handleMcp(req: IncomingMessage, res: ServerResponse, ctx: 
       return true;
     }
     if (method === 'server/discover') {
-      rpcResult(res, ctx, rpcId, { supportedVersions: SUPPORTED_VERSIONS, capabilities: { tools: {} }, serverInfo: SERVER_INFO });
+      answerResult(res, ctx, rpcId, { supportedVersions: SUPPORTED_VERSIONS, capabilities: { tools: {} }, serverInfo: SERVER_INFO });
       return true;
     }
     if (method === 'initialize') {
       const requested = typeof params.protocolVersion === 'string' ? params.protocolVersion : '';
       const negotiated = SUPPORTED_VERSIONS.includes(requested) ? requested : '2025-11-25';
-      rpcResult(res, ctx, rpcId, { protocolVersion: negotiated, capabilities: { tools: {} }, serverInfo: SERVER_INFO });
+      answerResult(res, ctx, rpcId, { protocolVersion: negotiated, capabilities: { tools: {} }, serverInfo: SERVER_INFO });
       return true;
     }
     if (method === 'tools/list') {
-      rpcResult(res, ctx, rpcId, { tools: TOOLS });
+      answerResult(res, ctx, rpcId, { tools: TOOLS });
       return true;
     }
     if (method === 'tools/call') {
       const toolName = typeof params.name === 'string' ? params.name : '';
       if (toolName === '') {
-        rpcError(res, ctx, rpcId, -32602, 'Invalid params: missing tool name');
+        answerError(res, ctx, rpcId, -32602, 'Invalid params: missing tool name');
         return true;
       }
       const known = TOOLS.some((t) => t.name === toolName);
       if (!known) {
-        rpcError(res, ctx, rpcId, -32601, `Method not found: ${toolName}`);
+        answerError(res, ctx, rpcId, -32601, `Method not found: ${toolName}`);
         return true;
       }
-      const args: Record<string, unknown> = { ...asRecord(params.arguments) };
-      normalizeArgs(args);
+      const args: Record<string, unknown> = { ...recordOf(params.arguments) };
+      fillArgSynonyms(args);
       const required = TOOL_REQUIRED[toolName] !== undefined ? (TOOL_REQUIRED[toolName] as string[]) : [];
       for (const prop of required) {
         const v = args[prop];
         if (v === undefined || v === null || (typeof v === 'string' && v.trim() === '')) {
-          rpcResult(res, ctx, rpcId, toolErrorResult(`Missing required argument: ${prop}`));
+          answerResult(res, ctx, rpcId, failedToolCall(`Missing required argument: ${prop}`));
           return true;
         }
       }
-      rpcResult(res, ctx, rpcId, callTool(toolName, args, ctx));
+      answerResult(res, ctx, rpcId, runTool(toolName, args, ctx));
       return true;
     }
-    rpcError(res, ctx, rpcId, -32601, `Method not found: ${method}`);
+    answerError(res, ctx, rpcId, -32601, `Method not found: ${method}`);
     return true;
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Internal error';
-    rpcError(res, ctx, rpcId, -32603, msg);
+    answerError(res, ctx, rpcId, -32603, msg);
     return true;
   }
 }
